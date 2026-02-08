@@ -4,7 +4,7 @@ Saola is a lifecycle and depdnecy management library.
 ## Installation
 Add clojure to dependency list: 
 ```clojure
-[org.clojars.jj/saola "1.0.0-SNAPSHOT"]
+[org.clojars.jj/saola "1.0.0"]
 ```
 
 
