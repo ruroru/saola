@@ -11,7 +11,7 @@
 
   :profiles {:test
              {:dependencies [
-                             [ch.qos.logback/logback-classic "1.5.29"]
+                             [ch.qos.logback/logback-classic "1.5.30"]
                              [mock-clj "0.2.1"]]}
              }
 
