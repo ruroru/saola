@@ -114,7 +114,7 @@
 (deftest successful-execution
   (testing "Verify execution happens in correct temporal order"
     (reset! execution-log [])
-    (let [registry (saola/register-components
+    (let [registry (list
                      (->DatabaseService :database)
                      (->ExtractDataJob :extract [:database])
                      (->TransformDataJob :transform [:extract :database])
@@ -178,7 +178,7 @@
                                                        {:key        {:connection "jdbc:postgresql://localhost:5432/warehouse"}
                                                         :service-id #jj.saola_test.DatabaseService{:id :database}})}
                                system))
-                        (saola/stop-system registry system)
+                        (saola/stop-system system)
                         (is (= (mock/calls database-service-stop) [[{:connection "jdbc:postgresql://localhost:5432/warehouse"}]]))
                         (is (= (mock/call-count database-service-stop) 1)))))))
 

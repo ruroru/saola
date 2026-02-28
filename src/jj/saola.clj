@@ -1,19 +1,18 @@
 (ns jj.saola
-  (:require [clojure.set :as set]
-            [clojure.tools.logging :as logger]
+  (:require [clojure.tools.logging :as logger]
             [clojure.pprint :as pprint]
             [jj.saola.protocols :refer [Job Service start start-job stop]]
             [jj.saola.topsort :refer [topsort]]))
 
-(defn register-component
+(defn- register-component
   [registry component]
   (let [component-id (:id component)]
     (when-not component-id
       (throw (ex-info "Component must have an :id field" {:component component})))
     (assoc registry component-id component)))
 
-(defn register-components
-  [& components]
+(defn- register-components
+  [components]
   (reduce register-component {} components))
 
 (defn- build-dependency-graph
@@ -34,13 +33,16 @@
   [registry component-id all-results]
   (let [component (get registry component-id)
         deps (:dependencies component [])]
-    (into {} (map (fn [dep-id]
-                    [dep-id (get all-results dep-id)])
-                  deps))))
+    (into {} (map (fn [dep-id] [dep-id (get all-results dep-id)]) deps))))
 
 (defn start-system
-  [registry config]
-  (let [dep-graph (build-dependency-graph registry)
+  "Start all components in dependency order.
+   `components` is a plain sequence (list, vector, …) of component records —
+   no pre-registration needed.
+   Returns a system map that can be passed directly to `stop-system`."
+  [components config]
+  (let [registry (register-components components)
+        dep-graph (build-dependency-graph registry)
         sorted-layers (topsort dep-graph)]
 
     (logger/info "STARTING SYSTEM")
@@ -56,15 +58,13 @@
                             (future
                               (let [component (get registry component-id)
                                     dependency-results (build-dependency-results registry component-id results)
-                                    comp-type (component-type component)]
-                                (let [result (if (= comp-type :service)
-                                               (do
-                                                 (logger/info "Starting service" (name component-id))
+                                    comp-type (component-type component)
+                                    result (if (= comp-type :service)
+                                             (do (logger/info "Starting service" (name component-id))
                                                  (start component (merge config dependency-results)))
-                                               (do
-                                                 (logger/info "Starting job" (name component-id))
+                                             (do (logger/info "Starting job" (name component-id))
                                                  (start-job component (merge config dependency-results))))]
-                                  [component-id result]))))
+                                [component-id result])))
                           layer)
                     layer-results (mapv deref layer-promises)]
                 (into results layer-results)))
@@ -72,48 +72,33 @@
             sorted-layers)]
 
       (logger/info "SYSTEM STARTED")
-      (let [services (into {} (filter (fn [[k _]]
-                                        (= :service (component-type (get registry k))))
-                                      all-results))
-            jobs (into {} (filter (fn [[k _]]
-                                    (= :job (component-type (get registry k))))
-                                  all-results))
-            service-keys (set (keys services))]
 
-        {:shut-down-graph (map (fn [k]
+      (let [services (into {} (filter (fn [[k _]] (= :service (component-type (get registry k)))) all-results))
+            jobs (into {} (filter (fn [[k _]] (= :job (component-type (get registry k)))) all-results))
+            service-keys (set (keys services))
+            shut-down-graph (->> (build-dependency-graph registry)
+                                 topsort
+                                 reverse
+                                 (apply concat)
+                                 (filter service-keys)
+                                 (map (fn [k]
+                                        {:service-id (get registry k)
+                                         :key        (get services k)})))]
 
-                                 {:service-id (get registry k)
-                                  :key (get services k)}
-                                 )
-                               (->> (build-dependency-graph registry)
-                                    topsort
-                                    reverse
-                                    (apply concat)
-                                    (filter service-keys)))
+        {:shut-down-graph shut-down-graph
          :services        services
          :job-results     jobs
          :all-results     all-results}))))
 
 (defn stop-system
-  [registry system]
-  (let [dep-graph (build-dependency-graph registry)
-        sorted-layers (topsort dep-graph)
-        reversed-layers (reverse sorted-layers)
-        services (:services system)]
+  "Stop all services in the system, in reverse dependency order.
+   Only the system map returned by `start-system` is required — no registry."
+  [system]
+  (logger/info "STOPPING SERVICES")
+  (doseq [{:keys [service-id key]} (:shut-down-graph system)]
+    (let [label (or (:id service-id) service-id)]
+      (logger/info "Stopping service:" label)
+      (stop service-id key)
+      (logger/info "Stopped service:" label)))
 
-    (logger/info "STOPPING SERVICES")
-
-    (doseq [layer reversed-layers]
-      (let [services-in-layer (filter #(contains? services %) layer)]
-        (when (seq services-in-layer)
-          (logger/info "\nStopping service layer:" services-in-layer "(parallel)")
-          (doall
-            (pmap (fn [service-id]
-                    (let [service (get registry service-id)
-                          service-result (get services service-id)]
-                      (logger/info "  Stopping service:" service-id)
-                      (stop service service-result)
-                      (logger/info "  Stopped service:" service-id)))
-                  services-in-layer)))))
-
-    (logger/info "ALL SERVICES STOPPED")))
+  (logger/info "ALL SERVICES STOPPED"))
