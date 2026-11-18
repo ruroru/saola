@@ -17,7 +17,7 @@
 
 
   :dependencies [[org.clojure/clojure "1.12.6"]
-                 [org.clojure/tools.logging "1.3.0"]]
+                 [org.clojure/tools.logging "1.3.2"]]
 
 
   :plugins [[org.clojars.jj/bump "1.0.4"]
