@@ -16,7 +16,7 @@
              }
 
 
-  :dependencies [[org.clojure/clojure "1.12.6"]
+  :dependencies [[org.clojure/clojure "1.12.7"]
                  [org.clojure/tools.logging "1.3.2"]]
 
 
